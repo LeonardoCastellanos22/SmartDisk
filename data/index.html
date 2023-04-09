@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<head>
+<head>
+    <meta charset='utf-8'>
+    <meta http-equiv='X-UA-Compatible' content='IE=edge'>
+    <title>Page Title</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <style>
+        .title{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 40px;
+            position: relative;
+            width: 500px;
+            height: 60px;
+            margin-left: auto;
+            margin-right: auto;
+          
+          }
+        .scheduleTitle{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 20px;
+            position: relative;
+            width: 100px;
+            height: 100px;
+            margin-left: auto;
+            margin-right: auto;  
+            
+          
+          }
+        
+        .schedule{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 18px;
+            position: relative;
+            width: 220px;
+            height: 30px;
+            margin-left: auto;
+            margin-right: auto;
+          
+          }
+        
+        .timeSchedule{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 18px;
+            position: relative;
+            width: 120px;
+            height: 30px;
+            margin-left: auto;
+            margin-right: auto;
+        
+        }
+        
+        .wifi{
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          font-size: 18px;
+          position: relative;
+          width: 260px;
+          height: 20px;
+          margin-left: auto;
+          margin-right: auto;
+        
+        }
+        .timeScheduleDuration{
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          font-size: 18px;
+          position: relative;
+          width: 90px;
+          height: 20px;
+          margin-left: auto;
+          margin-right: auto;
+        
+        }
+        .timeScheduleTitle{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 18px;
+            position: relative;
+            width: 220px;
+            height: 30px;
+            margin-left: auto;
+            margin-right: auto;
+        
+        }
+        
+        .scheduleAlign{
+          margin: auto;
+          width: 40%;
+          padding: 20px;
+        
+        }
+        
+        .buttonAlign{
+          margin: auto;
+          width: 20%;
+          padding: 20px;
+        }
+        
+        .button {
+            margin-left: auto;
+            margin-right: auto;  
+            border-radius: 4px;
+            background-color: green;
+            border: none;
+            color: #FFFFFF;
+            text-align: center;
+            font-size: 18px;
+            width: 100px;
+            height: 30px;
+            transition: all 0.5s;
+            cursor: pointer;
+            position: relative;
+          
+            
+          }       
+        
+    </style>
+</head>
+   
+</head>
+<body>
+    <form action="/get" method="get" target="_blank">
+    <div>
+        <h1 class = "title">Smart Disk v1.0 </h1>
+    </div>   
+    <div class = "scheduleAlign">
+        <label class = "timeScheduleTitle" for="wifi">Network SSID: </label>
+        <input class = "wifi" type="text" id="wifi" name="wifi" placeholder="SSID">        
+    </div>   
+    <div class = "scheduleAlign">
+        <label class = "timeScheduleTitle" for="password">Network Password: </label>
+        <input class = "wifi" type="text" id="password" name="password" placeholder="Password">        
+    </div>  
+    <div class = "scheduleAlign">
+        <label class = "timeScheduleTitle" for="scheduleTime">Choose a time for the BackUp:</label>
+        <input class = "timeSchedule" type="time" id="scheduleTime" name="scheduleTime" value = "21:00">        
+    </div>
+    <div class = "scheduleAlign">
+        <label class = "timeScheduleTitle" for="duration">BackUp duration (minutes): </label>
+        <input class = "timeScheduleDuration" type="number" id="duration" name="duration" value="30" >
+    </div>
+    <input type="hidden" id="checkdate" name="checkdate" value = "">
+    <div class = "buttonAlign">
+        <button class ="button" >Set event</button>  
+    </div>
+    </form>  
+    
+    
+</body>
+
+<script>
+    function getCurrentTimestamp () {
+        return Math.floor(Date.now() / 1000);
+    }    
+    var timestamp = getCurrentTimestamp(); //Get Current Timestamp
+    document.getElementById("checkdate").value = timestamp; //Send it as hidden input
+</script>
+
+
+</html>
