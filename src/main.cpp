@@ -97,14 +97,15 @@ void compareTime(){
   scheduleHourPlusDuration = scheduleHour + leftHour;        //Add duration hour to schedule hour
   scheduleMinutesPlusDuration = scheduleMinutes + int((rightMinute)*60);  //Add duration minute to schedule minute
 
-  if(getHour >= scheduleHour && getMinutes == scheduleMinutes ||          // Check if the date comply
-          getHour <= scheduleHourPlusDuration && getMinutes == scheduleMinutesPlusDuration){
+  if(getHour == scheduleHour && getMinutes == scheduleMinutes){
       digitalWrite(diskOutput,LOW);             //Activate Relé
       Serial.println("BackUp in progress");
+    
+  }                                                                                     
+  if(getHour == scheduleHourPlusDuration && getMinutes == scheduleMinutesPlusDuration){ // Check if the date comply
+      digitalWrite(diskOutput,HIGH);             //Deactivate Relé
+      Serial.println("BackUp has ended");
 
-  }
-  else{
-    digitalWrite(diskOutput,HIGH);             //Deactivate Relé
   }
   if(flags.isMqttConnected){                  //If the MQTT is connected publish data to Ubidots}
     
