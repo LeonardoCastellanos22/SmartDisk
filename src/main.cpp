@@ -6,6 +6,8 @@
 #include "UbidotsEsp32Mqtt.h"
 #include "SPIFFS.h"
 #include "ESPAsyncWebServer.h"
+#include "time.h"
+
 
 
 typedef struct{
@@ -23,7 +25,7 @@ typedef struct{
 volatile soft_flags flags;
 
 /*Ubidots Constants*/
-const char *UBIDOTS_TOKEN = "BBFF-VjYCiwC6ieDwpHSiXBjEKxEIvIsaio";  // Put here your Ubidots TOKEN
+const char *UBIDOTS_TOKEN = "BBFF-MUDDPdoNZT2soyNN7ABMCFRLJO6JDH";  // Put here your Ubidots TOKEN
 const char *DEVICE_LABEL = "smartdisk";   // Put here your Device label to which data  will be published
 const char *VARIABLE_SEND = "backupregister"; // Put here your Variable label to which data  will be published
 const char *VARIABLE_RECEIVE = "scheduletime"; // Put here your Variable label to which data  will be suscribed
@@ -33,18 +35,21 @@ const char *VARIABLE_MANUALLY_BACKUP = "manuallybackup"; // Put here your Variab
 Ubidots ubidots(UBIDOTS_TOKEN);
 
 const int diskOutput = 26;         //Disk output
+const int led = 2;                 //Led Output
 const char* ssidApn = "SmartDisk"; // SSID APN
 const char* passwordApn = "12345Smart"; //Password APN
-const int faultCounter = 10;
+const int faultCounter = 30;
 
 DNSServer dnsServer;       //Define DNS server
 AsyncWebServer server(80); //Web Server using port 80
 
-char* ssidNew;             //New SSID set by user 
-char* passwordNew;         //New Password set by user
+String ssidNew;             //New SSID set by user 
+String passwordNew;         //New Password set by user
 String scheduleTime = "21:00";       //Schedule Time set by user
 int duration = 30;           //Duration set by user
-char* updateTimestamp;    //Update RTC timestamp
+String updateTimestamp;    //Update RTC timestamp
+String deviceMac;
+char* clientName;
 
 const long currentTimestamp = 1680834212; // Current timestamp
 int getHour;
@@ -53,8 +58,11 @@ int scheduleHour;
 int scheduleMinutes;
 int scheduleHourPlusDuration;
 int scheduleMinutesPlusDuration;
+float checkResult;
+int counterStart = 0;
+int counterEnd = 0;
 
-const char* ntpServer = "pool.ntp.org";
+const char* ntpServer = "co.pool.ntp.org";
 const long  gmtOffset_sec = -18000;
 const int   daylightOffset_sec = 3600;
 
@@ -75,11 +83,14 @@ void spiffsConfiguration(){
 }
 
 void updateRTCwithNtpServer(){
+  Serial.println("Updating RTC");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   struct tm timeinfo;
   if(getLocalTime(&timeinfo)){
     rtc.setTimeStruct(timeinfo);
   }
+  Serial.println(getLocalTime(&timeinfo));
+  Serial.println(rtc.getEpoch());
 }
 
 void compareTime(){
@@ -87,45 +98,83 @@ void compareTime(){
   getHour = rtc.getHour(true);                               //Get RTC hour
   getMinutes = rtc.getMinute();                              //Get RTC minutes
 
-  scheduleHour =  (scheduleTime.substring(0,1)).toInt();     //Get Schedule Hour
-  scheduleMinutes =  (scheduleTime.substring(3,4)).toInt();  //Get Schedule Minute
+  scheduleHour =  (scheduleTime.substring(0,2)).toInt();     //Get Schedule Hour
+  scheduleMinutes =  (scheduleTime.substring(3,5)).toInt();  //Get Schedule Minute
 
-  float castDuration = duration / 60;                        //Convert duration to hours
-  int leftHour = (int) castDuration;                         //Get hour to add
-  int rightMinute = castDuration - leftHour;                 //Get minute to add
+
+  float castDuration = duration / 60.00;                        //Convert duration to hours
+  int leftHour = (int) castDuration;                           //Get hour to add
+  float rightMinute = castDuration - (float)leftHour;                 //Get minute to add
 
   scheduleHourPlusDuration = scheduleHour + leftHour;        //Add duration hour to schedule hour
-  scheduleMinutesPlusDuration = scheduleMinutes + int((rightMinute)*60);  //Add duration minute to schedule minute
+  checkResult = rightMinute * 60.00;
+  scheduleMinutesPlusDuration = scheduleMinutes + (int) checkResult;  //Add duration minute to schedule minute
+
 
   if(getHour == scheduleHour && getMinutes == scheduleMinutes){
+    counterStart++;
+    if(counterStart == 1){
+      Serial.println(scheduleHour);
+      Serial.println(scheduleMinutes);
+      Serial.println("Current Hour");
+      Serial.println(getHour);
+      Serial.println("Current Minute");
+      Serial.println(getMinutes);
       digitalWrite(diskOutput,LOW);             //Activate Relé
+      digitalWrite(led,HIGH);
       Serial.println("BackUp in progress");
+      counterEnd = 0;
+    }
     
   }                                                                                     
   if(getHour == scheduleHourPlusDuration && getMinutes == scheduleMinutesPlusDuration){ // Check if the date comply
+    counterEnd++;
+    if(counterEnd == 1){   
+      Serial.println(scheduleHourPlusDuration);
+      Serial.println(scheduleMinutesPlusDuration);
+      Serial.println("Current Hour");
+      Serial.println(getHour);
+      Serial.println("Current Minute");
+      Serial.println(getMinutes);                       
       digitalWrite(diskOutput,HIGH);             //Deactivate Relé
+      digitalWrite(led,LOW);
       Serial.println("BackUp has ended");
+      counterStart = 0;
+    }
+
 
   }
-  if(flags.isMqttConnected){                  //If the MQTT is connected publish data to Ubidots}
+  if(flags.isMqttConnected){                  //If the MQTT is connected publish data to Ubidots   
+
     
     if(getHour == scheduleHour && getMinutes == scheduleMinutes  ){ // If the BackUpt starts
-      updateRTCwithNtpServer();
-      char init [20] = "BackUp has started";
-      char contextInit[30];
-      ubidots.addContext("BackUp", init);
-      ubidots.getContext(contextInit);
-      ubidots.add(VARIABLE_SEND, 1 ,contextInit); // Insert your variable Labels and the value to be sent
-      ubidots.publish(DEVICE_LABEL);
+      //updateRTCwithNtpServer();
+      
+      if(counterStart == 1){
+        char scheduleCharInit[scheduleTime.length()+1];
+        scheduleTime.toCharArray(scheduleCharInit, scheduleTime.length()+1);
+        char init [14] = "Started";
+        char contextInit[30];
+        ubidots.addContext("BackUp Init", scheduleCharInit);
+        ubidots.getContext(contextInit);
+        ubidots.add(VARIABLE_SEND, 1, contextInit); // Insert your variable Labels and the value to be sent
+        ubidots.publish(DEVICE_LABEL);
+      }
+
     }
     if(getHour == scheduleHourPlusDuration && getMinutes == scheduleMinutesPlusDuration){ //If the BackUp end
-
-      char finish [20] = "BackUp has finished";
+     if(counterEnd == 1){
+      String scheduleEnd = String(scheduleHourPlusDuration) + ":" + String(scheduleMinutesPlusDuration);
+      Serial.println(scheduleEnd);
+      char scheduleCharEnd[scheduleEnd.length()+1];
+      scheduleEnd.toCharArray(scheduleCharEnd, scheduleTime.length()+1);
+      char finish [14] = "Finished";
       char contextFinish[30];
-      ubidots.addContext("BackUp", finish);
+      ubidots.addContext("BackUp Finished", scheduleCharEnd);
       ubidots.getContext(contextFinish);
-      ubidots.add(VARIABLE_SEND, 0 ,contextFinish); // Insert your variable Labels and the value to be sent
+      ubidots.add(VARIABLE_SEND, 0, contextFinish ); // Insert your variable Labels and the value to be sent
       ubidots.publish(DEVICE_LABEL);
+     }
 
     }
   }
@@ -146,9 +195,15 @@ void apnConfiguration(const char* ssidApn){
   Serial.println(AP_LOCAL_IP);
 }
 
-void newWifiConnection( char* ssidNewNetwork , char* passwordNewPassword, const char* ssidApn){
-  if(strlen(ssidNewNetwork)!=0){
-    WiFi.begin(ssidNewNetwork, passwordNewPassword);          // Connect to the new WiFi network
+void newWifiConnection( String ssidNewNetwork , String passwordNewPassword, const char* ssidApn){
+  char ssidNewNet [ssidNewNetwork.length()+1];
+  ssidNewNetwork.toCharArray(ssidNewNet, ssidNewNetwork.length()+1);
+  char passNewNet [passwordNewPassword.length()+1];
+  passwordNewPassword.toCharArray(passNewNet, passwordNewPassword.length()+1);
+
+  if(strlen(ssidNewNet)!=0){
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssidNewNet, passNewNet);          // Connect to the new WiFi network
     for(int i = 0; i < faultCounter ; i ++){                  // Loop to check if the connection fails
       if (WiFi.status() != WL_CONNECTED) {                   // Check if network is connected
         delay(1000);
@@ -159,18 +214,22 @@ void newWifiConnection( char* ssidNewNetwork , char* passwordNewPassword, const 
         flags.isNewWifiConnected = true;
         Serial.println("");
         Serial.print("WiFi connected to ");
-        Serial.println(ssidNewNetwork);
+        Serial.println(ssidNewNet);
         Serial.print("Device IP: ");  
         Serial.println(WiFi.localIP()); //Display IP of the device
+        deviceMac = WiFi.macAddress();
+        clientName = new char[deviceMac.length() + 1];
         break;
 
       }
     }
   }
   else{
-    apnConfiguration(ssidApn);
+    flags.isNewWifiConnected = false;
   }
   if(!flags.isNewWifiConnected){// If the connection fails, the original SSID is configured
+      Serial.println(" ");
+      Serial.println("Connection failed");
       apnConfiguration(ssidApn);
   }
 }
@@ -179,7 +238,7 @@ void callback(char *topic, byte *payload, unsigned int length) //Callback MQTT
 {
   Serial.print("Message arrived [");
   Serial.print(topic);
-  Serial.print("] ");
+  Serial.println("] ");
   String payloadReceived;
 
   for (int i = 0; i < length; i++)
@@ -194,7 +253,7 @@ void callback(char *topic, byte *payload, unsigned int length) //Callback MQTT
   sprintf(topicSchedule, "/v1.6/devices/%s/%s", DEVICE_LABEL, VARIABLE_RECEIVE);
   sprintf(topicManually, "/v2.0/devices/%s/%s/lv", DEVICE_LABEL, VARIABLE_MANUALLY_BACKUP);
 
-  if(topic == topicSchedule ){              // Compare if we receive the schedule topic
+  if(String(topic) == topicSchedule ){              // Compare if we receive the schedule topic
     StaticJsonDocument<200> doc;            //Static JSON Document
     DeserializationError error = deserializeJson(doc, payloadReceived); //Deserialize the JSON
 
@@ -209,20 +268,28 @@ void callback(char *topic, byte *payload, unsigned int length) //Callback MQTT
     duration = value;
     scheduleTime = ubidotsKey;
 
-    Serial.println("Schedule time received");
-    Serial.println(scheduleTime);
-    Serial.println("Duration time received");
-    Serial.println(duration);
-    Serial.println();
+
   }
-  else if(topic == topicManually){// Compare if we receive the manually topic
-    if (payloadReceived.toInt() == 1){
-      
-      char manually [40] = "Manually BackUp";
-      char contextManually[80];
-      ubidots.addContext("BackUp", manually);
+  else if(String(topic) == topicManually){// Compare if we receive the manually topic
+
+    char contextManually[80];
+    if ((char)payload[0] == '1'){      
+
+      ubidots.addContext("Manually", "Start");
       ubidots.getContext(contextManually);
-      ubidots.add(VARIABLE_SEND, 1 ,contextManually); // Insert your variable Labels and the value to be sent
+      digitalWrite(diskOutput,LOW);             //Activate Relé
+      ubidots.add(VARIABLE_SEND, 1, contextManually ); // Insert your variable Labels and the value to be sent
+      ubidots.publish(DEVICE_LABEL);
+      Serial.println(rtc.getHour(true));
+      Serial.println(rtc.getMinute());
+        
+    }
+    if ((char)payload[0] == '0'){
+      
+      ubidots.addContext("Manually", "Finish");
+      ubidots.getContext(contextManually);
+      digitalWrite(diskOutput,HIGH);             //Activate Relé
+      ubidots.add(VARIABLE_SEND, 0, contextManually ); // Insert your variable Labels and the value to be sent
       ubidots.publish(DEVICE_LABEL);
         
     }
@@ -232,28 +299,34 @@ void callback(char *topic, byte *payload, unsigned int length) //Callback MQTT
 }
 
 void mqttReconnect(){
-  for(int i = 0; i < faultCounter ; i ++){                  // Loop to check if the connection fails
-    if (!ubidots.connected()) {                           // Check if MQTT is connected
-        delay(2000);
-        Serial.print("MQTT Connection failing");
-        flags.isMqttConnected = false;
-    }
+                                                 // Loop to check if the connection fails
+  for(int i = 0; i < faultCounter ; i ++){
+    if(ubidots.connect(clientName, UBIDOTS_TOKEN, UBIDOTS_TOKEN)){ // Check if MQTT is connected
+      flags.isMqttConnected = true;
+      Serial.print("MQTT Connected ");
+      break;     
+    }        
     else{
-        flags.isMqttConnected = true;
-        Serial.print("MQTT Connected ");
-        break;
+      delay(5000);
+      Serial.print(".");
+      flags.isMqttConnected = false;
 
-      }
+    }      
     }
-
 }
+ 
+
+
 
 void mqttConnection(){        //MQTT Connection to Ubidots Broker
+  Serial.println("Checking WiFi Connection");  
+  newWifiConnection(ssidNew, passwordNew, ssidApn);     
   if(flags.isNewWifiConnected){ // If the Network with internet is connected
     ubidots.setCallback(callback); //Callback MQTT function
     ubidots.setup();
     mqttReconnect();              //Check MQTT Connection
     if(flags.isMqttConnected){    //If MQTT is connected
+
       char topic[50]; 
       sprintf(topic, "/v1.6/devices/%s/%s", DEVICE_LABEL, VARIABLE_RECEIVE);
       ubidots.subscribe(topic);   //Suscribe to the last dot topic
@@ -262,15 +335,13 @@ void mqttConnection(){        //MQTT Connection to Ubidots Broker
       ubidots.subscribeLastValue(DEVICE_LABEL, VARIABLE_MANUALLY_BACKUP); // Suscribe to Manually BackUp variable
 
     }
-
-
-  }
-  if(!flags.isMqttConnected){  // If the connection fails, the APN is configured
+    else{
       apnConfiguration(ssidApn);
-
+    }
   }
-
-
+  else{
+    flags.isMqttConnected = false;
+  }
 
 }
 
@@ -298,46 +369,42 @@ void setupServer(){ //The server is set to respond to various request
   server.on("/get", HTTP_GET, [] (AsyncWebServerRequest *request) { //Process the data sent in this path and send a request
       String inputMessage;
       String inputParam;
+      Serial.println("Receiving data from WebServer");
   
-      if (request->hasParam("wifi")) { //Has the query param /WiFi
-        ssidNew = "";
-        inputMessage = request->getParam("wifi")->value();          //Get value of this query param
-        inputParam = "wifi";                                        //Input query param
-        inputMessage.toCharArray(ssidNew, inputMessage.length()+1); //Cast the Input message to Char array
+      if (request->hasParam("ssid")) { //Has the query param /WiFi
+        inputMessage = request->getParam("ssid")->value();          //Get value of this query param
+        inputParam = "ssid";                                        //Input query param
+        ssidNew = inputMessage;
         Serial.println(ssidNew);
         flags.ssidFlag = true;
       }
 
       if (request->hasParam("password")) { //Has the query param /Password
-        passwordNew = "";
         inputMessage = request->getParam("password")->value();          //Get value of this query param
         inputParam = "password";                                       //Input query param
-        inputMessage.toCharArray(passwordNew, inputMessage.length()+1);//Cast the Input message to Char array
+        passwordNew = inputMessage;
         Serial.println(passwordNew);
         flags.passwordFlag = true;
       }
       if (request->hasParam("scheduleTime")) { //Has the query param /Password
-        scheduleTime = "";
         inputMessage = request->getParam("scheduleTime")->value();          //Get value of this query param
         inputParam = "scheduleTime";                                        //Input query param
-        scheduleTime = inputParam;
-        Serial.println(inputMessage);
+        scheduleTime = inputMessage;
+        Serial.println(scheduleTime);
         flags.scheduleFlag = true;
       }
       if (request->hasParam("duration")) { //Has the query param /Password
         duration = 0;
         inputMessage = request->getParam("duration")->value();          //Get value of this query param
         inputParam = "duration";                                       //Input query param
-        inputMessage.toCharArray(passwordNew, inputMessage.length()+1);//Cast the Input message to Char array
-        duration = inputParam.toInt();
-        Serial.println(inputMessage);
+        duration = inputMessage.toInt();
+        Serial.println(duration);
         flags.durationFlag = true;
       }
       if (request->hasParam("checkdate")) { //Has the query param /Password
-        updateTimestamp = "";
         inputMessage = request->getParam("checkdate")->value();          //Get value of this query param
-        inputParam = "checkdate";                                       //Input query param
-        inputMessage.toCharArray(updateTimestamp, inputMessage.length()+1);//Cast the Input message to Char array
+        inputParam = "checkdate"; 
+        updateTimestamp = inputMessage;                                      //Input query param
         Serial.println(updateTimestamp);
         flags.timestampFlag = true;
       }
@@ -348,10 +415,13 @@ void setupServer(){ //The server is set to respond to various request
 
 
 
+
 void setup() {
   /*Configuration*/
   Serial.begin(115200);
   pinMode(diskOutput, OUTPUT);
+  pinMode(led, OUTPUT);
+  digitalWrite(led,LOW);
   digitalWrite(diskOutput,HIGH);
   flags.durationFlag = false;
   flags.scheduleFlag = false;
@@ -378,6 +448,8 @@ void loop(){
 
   if(flags.isMqttConnected){
     if(!ubidots.connected()){
+      Serial.println("Disconnected");
+      Serial.println(ubidots.connected());
       mqttReconnect();
     }
     ubidots.loop();
@@ -387,15 +459,15 @@ void loop(){
     if(flags.ssidFlag && flags.passwordFlag && flags.scheduleFlag && flags.durationFlag && flags.timestampFlag){
 
 
-      newWifiConnection(ssidNew, passwordNew, ssidApn);   //Set the new WiFi credentials
-      if(flags.isNewWifiConnected){                       //Update RTC from NTP server
-        updateRTCwithNtpServer();
-      }
-      else{                                             //Update RTC from NTP server
-        long updatedTimestamp = atol(updateTimestamp);      //Convert char to long
-        rtc.setTime(updatedTimestamp);                      //Update RTC time   
-      }
       mqttConnection();                                   //Try to connect to MQTT
+   
+      char castTimestamp [updateTimestamp.length()+1];     //Update RTC from NTP server
+      updateTimestamp.toCharArray(castTimestamp, updateTimestamp.length()+1);
+      long updatedTimestamp = atol(castTimestamp);      //Convert char to long
+      rtc.setTime(updatedTimestamp - 18000);            //Update RTC time 
+      Serial.println("Updating RTC");
+      Serial.println(rtc.getEpoch());     
+      
       //Reset flags
       flags.ssidFlag = false;
       flags.durationFlag = false;
